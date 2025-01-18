@@ -15,14 +15,14 @@ public struct MeshData
 
   public MeshData()
   {
-    Vertices = new List<float>();
-    Indices = new List<int>();
+    Vertices = [];
+    Indices = [];
     Duration = 0f;
     ModelMatrix = Matrix4.Identity;
-    KeyframeTimes = Array.Empty<float>();
-    TranslationBuffer = Array.Empty<float>();
+    KeyframeTimes = [];
+    TranslationBuffer = [];
     TranslationLength = 0;
-    RotationBuffer = Array.Empty<float>();
+    RotationBuffer = [];
     RotationLength = 0;
   }
 }
@@ -98,52 +98,54 @@ public class Object3D
   {
     if (animations == null || animations.Count == 0) return;
 
-    var channel = animations
-        .SelectMany(animation => animation.Channels)
-        .FirstOrDefault(ch => ch.GetTranslationSampler() != null || ch.GetRotationSampler() != null);
-
-    if (channel?.TargetNode == null) return;
-
-    var translationKeyframes = channel.GetTranslationSampler()?.GetLinearKeys();
-    var rotationKeyframes = channel.GetRotationSampler()?.GetLinearKeys();
-
-    for (int i = 0; i < Meshes.Count; i++)
+    foreach (var animation in animations)
     {
-      var mesh = Meshes[i];
-
-      mesh.KeyframeTimes ??= Array.Empty<float>();
-
-      if (translationKeyframes?.Any() == true)
+      foreach (var channel in animation.Channels)
       {
-        if (mesh.KeyframeTimes.Length == 0)
+        var targetNode = channel.TargetNode;
+        if (targetNode == null || targetNode.Mesh == null) continue;
+
+        int meshIndex = Meshes.FindIndex(m => m.ModelMatrix == ConvertToMatrix4(targetNode.WorldMatrix));
+        if (meshIndex == -1) continue;
+
+        var mesh = Meshes[meshIndex];
+
+        var translationKeyframes = channel.GetTranslationSampler()?.GetLinearKeys();
+        var rotationKeyframes = channel.GetRotationSampler()?.GetLinearKeys();
+
+        if (translationKeyframes?.Any() == true)
         {
-          mesh.KeyframeTimes = translationKeyframes.Select(kf => kf.Key).ToArray();
+          if (mesh.KeyframeTimes.Length == 0)
+          {
+            mesh.KeyframeTimes = translationKeyframes.Select(kf => kf.Key).ToArray();
+          }
+
+          mesh.TranslationBuffer = translationKeyframes
+              .SelectMany(kf => new[] { kf.Value.X, kf.Value.Y, kf.Value.Z })
+              .ToArray();
+
+          mesh.TranslationLength = translationKeyframes.Count();
         }
 
-        mesh.TranslationBuffer = translationKeyframes
-            .SelectMany(kf => new[] { kf.Value.X, kf.Value.Y, kf.Value.Z })
-            .ToArray();
-
-        mesh.TranslationLength = translationKeyframes.Count();
-      }
-
-      if (rotationKeyframes?.Any() == true)
-      {
-        if (mesh.KeyframeTimes.Length == 0)
+        if (rotationKeyframes?.Any() == true)
         {
-          mesh.KeyframeTimes = rotationKeyframes.Select(kf => kf.Key).ToArray();
+          if (mesh.KeyframeTimes.Length == 0)
+          {
+            mesh.KeyframeTimes = rotationKeyframes.Select(kf => kf.Key).ToArray();
+          }
+
+          mesh.RotationBuffer = rotationKeyframes
+              .SelectMany(kf => new[] { kf.Value.X, kf.Value.Y, kf.Value.Z, kf.Value.W })
+              .ToArray();
+
+          mesh.RotationLength = rotationKeyframes.Count();
         }
 
-        mesh.RotationBuffer = rotationKeyframes
-            .SelectMany(kf => new[] { kf.Value.X, kf.Value.Y, kf.Value.Z, kf.Value.W })
-            .ToArray();
+        mesh.Duration = mesh.KeyframeTimes?.Max() ?? 0f;
 
-        mesh.RotationLength = rotationKeyframes.Count();
+        Meshes[meshIndex] = mesh;
       }
-
-      mesh.Duration = mesh.KeyframeTimes?.Max() ?? 0f;
-
-      Meshes[i] = mesh;
     }
   }
+
 }
