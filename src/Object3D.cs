@@ -3,10 +3,12 @@ using OpenTK.Mathematics;
 
 public struct MeshData
 {
+  // Mesh
   public List<float> Vertices { get; set; }
   public List<int> Indices { get; set; }
-  public float Duration { get; set; }
   public Matrix4 ModelMatrix { get; set; }
+  // Animation
+  public float Duration { get; set; }
   public float[] KeyframeTimes { get; set; }
   public float[] TranslationBuffer { get; set; }
   public int TranslationLength { get; set; }
