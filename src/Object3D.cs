@@ -1,8 +1,5 @@
 using SharpGLTF.Schema2;
 using OpenTK.Mathematics;
-using System;
-using System.Collections.Generic;
-using System.Linq;
 
 public struct MeshData
 {
@@ -56,7 +53,7 @@ public class Object3D
 
     if (node.Mesh != null)
     {
-      ExtractMeshData(node.Mesh);
+      ExtractMeshData(node);
     }
 
     foreach (Node child in node.VisualChildren)
@@ -65,9 +62,9 @@ public class Object3D
     }
   }
 
-  private void ExtractMeshData(Mesh mesh)
+  private void ExtractMeshData(Node node)
   {
-    foreach (MeshPrimitive primitive in mesh.Primitives)
+    foreach (MeshPrimitive primitive in node.Mesh.Primitives)
     {
       var meshData = new MeshData();
 
@@ -81,8 +78,20 @@ public class Object3D
         meshData.Indices.AddRange(primitive.IndexAccessor.AsIndicesArray().Select(i => (int)i));
       }
 
+      meshData.ModelMatrix = ConvertToMatrix4(node.LocalMatrix); ;
+
       Meshes.Add(meshData);
     }
+  }
+
+  private Matrix4 ConvertToMatrix4(System.Numerics.Matrix4x4 matrix)
+  {
+    return new Matrix4(
+      matrix.M11, matrix.M12, matrix.M13, matrix.M14,
+      matrix.M21, matrix.M22, matrix.M23, matrix.M24,
+      matrix.M31, matrix.M32, matrix.M33, matrix.M34,
+      matrix.M41, matrix.M42, matrix.M43, matrix.M44
+    );
   }
 
   private void ExtractAnimationData(IReadOnlyList<Animation> animations)

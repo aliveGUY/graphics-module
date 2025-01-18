@@ -2,11 +2,15 @@ using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
+using System;
+using System.IO;
 
-class MeshWindow : GameWindow
+public class MeshWindow : GameWindow
 {
   private readonly Object3D _mesh;
-  private int _vao, _vbo, _ebo;
+  private List<int> _vaos = new();
+  private List<int> _vbos = new();
+  private List<int> _ebos = new();
   private int _shaderProgram;
   private int _projectionLocation, _viewLocation, _modelLocation;
   private float _deltaTime = 0.0f;
@@ -50,36 +54,34 @@ class MeshWindow : GameWindow
     _viewLocation = GL.GetUniformLocation(_shaderProgram, "view");
     _modelLocation = GL.GetUniformLocation(_shaderProgram, "model");
 
-    _vao = GL.GenVertexArray();
-    _vbo = GL.GenBuffer();
-    _ebo = GL.GenBuffer();
+    foreach (var meshData in _mesh.Meshes)
+    {
+      int vao = GL.GenVertexArray();
+      int vbo = GL.GenBuffer();
+      int ebo = GL.GenBuffer();
 
-    GL.BindVertexArray(_vao);
+      GL.BindVertexArray(vao);
 
-    GL.BindBuffer(BufferTarget.ArrayBuffer, _vbo);
-    GL.BufferData(BufferTarget.ArrayBuffer, _mesh.Meshes[0].Vertices.Count * sizeof(float), _mesh.Meshes[0].Vertices.ToArray(), BufferUsageHint.StaticDraw);
+      GL.BindBuffer(BufferTarget.ArrayBuffer, vbo);
+      GL.BufferData(BufferTarget.ArrayBuffer, meshData.Vertices.Count * sizeof(float), meshData.Vertices.ToArray(), BufferUsageHint.StaticDraw);
 
-    GL.BindBuffer(BufferTarget.ElementArrayBuffer, _ebo);
-    GL.BufferData(BufferTarget.ElementArrayBuffer, _mesh.Meshes[0].Indices.Count * sizeof(int), _mesh.Meshes[0].Indices.ToArray(), BufferUsageHint.StaticDraw);
+      GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo);
+      GL.BufferData(BufferTarget.ElementArrayBuffer, meshData.Indices.Count * sizeof(int), meshData.Indices.ToArray(), BufferUsageHint.StaticDraw);
 
-    GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 3 * sizeof(float), 0);
-    GL.EnableVertexAttribArray(0);
+      GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 3 * sizeof(float), 0);
+      GL.EnableVertexAttribArray(0);
 
-    // Upload static animation data
-    GL.UseProgram(_shaderProgram);
-
-    GL.Uniform1(GL.GetUniformLocation(_shaderProgram, "keyframeTimes"), _mesh.Meshes[0].KeyframeTimes.Length, _mesh.Meshes[0].KeyframeTimes);
-    GL.Uniform3(GL.GetUniformLocation(_shaderProgram, "translations"), _mesh.Meshes[0].TranslationLength, _mesh.Meshes[0].TranslationBuffer);
-    GL.Uniform4(GL.GetUniformLocation(_shaderProgram, "rotations"), _mesh.Meshes[0].RotationLength, _mesh.Meshes[0].RotationBuffer);
-    GL.Uniform1(GL.GetUniformLocation(_shaderProgram, "keyframeCount"), _mesh.Meshes[0].KeyframeTimes.Length);
+      _vaos.Add(vao);
+      _vbos.Add(vbo);
+      _ebos.Add(ebo);
+    }
   }
 
   protected override void OnUpdateFrame(FrameEventArgs args)
   {
     base.OnUpdateFrame(args);
 
-    _deltaTime = (_deltaTime + (float)args.Time) % _mesh.Meshes[0].Duration;
-
+    _deltaTime = (_deltaTime + (float)args.Time) % _mesh.Meshes.Max(m => m.Duration);
     UpdateProjection();
   }
 
@@ -91,11 +93,28 @@ class MeshWindow : GameWindow
 
     GL.UseProgram(_shaderProgram);
 
-    GL.Uniform1(GL.GetUniformLocation(_shaderProgram, "animationTime"), _deltaTime);
-    GL.Uniform1(GL.GetUniformLocation(_shaderProgram, "animationDuration"), _mesh.Meshes[0].Duration);
+    float animationTime = _deltaTime;
 
-    GL.BindVertexArray(_vao);
-    GL.DrawElements(PrimitiveType.Triangles, _mesh.Meshes[0].Indices.Count, DrawElementsType.UnsignedInt, 0);
+    for (int i = 0; i < _mesh.Meshes.Count; i++)
+    {
+      var mesh = _mesh.Meshes[i];
+
+      GL.Uniform1(GL.GetUniformLocation(_shaderProgram, "animationTime"), animationTime);
+      GL.Uniform1(GL.GetUniformLocation(_shaderProgram, "animationDuration"), mesh.Duration);
+      GL.Uniform1(GL.GetUniformLocation(_shaderProgram, "keyframeTimes"), mesh.KeyframeTimes.Length, mesh.KeyframeTimes);
+      GL.Uniform3(GL.GetUniformLocation(_shaderProgram, "translations"), mesh.TranslationLength, mesh.TranslationBuffer);
+      GL.Uniform4(GL.GetUniformLocation(_shaderProgram, "rotations"), mesh.RotationLength, mesh.RotationBuffer);
+      GL.Uniform1(GL.GetUniformLocation(_shaderProgram, "keyframeCount"), mesh.KeyframeTimes.Length);
+
+      var model = mesh.ModelMatrix *
+                  Matrix4.CreateRotationX(MathHelper.DegreesToRadians(_rotationX)) *
+                  Matrix4.CreateRotationY(MathHelper.DegreesToRadians(_rotationY));
+
+      GL.UniformMatrix4(_modelLocation, false, ref model);
+
+      GL.BindVertexArray(_vaos[i]);
+      GL.DrawElements(PrimitiveType.Triangles, mesh.Indices.Count, DrawElementsType.UnsignedInt, 0);
+    }
 
     SwapBuffers();
   }
@@ -110,24 +129,16 @@ class MeshWindow : GameWindow
     var projection = Matrix4.CreatePerspectiveFieldOfView(fov, aspectRatio, 0.1f, farPlane);
     var view = Matrix4.LookAt(new Vector3(0.0f, 0.0f, cameraDistance), Vector3.Zero, Vector3.UnitY);
 
-    // Use Object3D's model matrix
-    var model = _mesh.Meshes[0].ModelMatrix *
-                Matrix4.CreateRotationX(MathHelper.DegreesToRadians(_rotationX)) *
-                Matrix4.CreateRotationY(MathHelper.DegreesToRadians(_rotationY));
-
     GL.UseProgram(_shaderProgram);
     GL.UniformMatrix4(_projectionLocation, false, ref projection);
     GL.UniformMatrix4(_viewLocation, false, ref view);
-    GL.UniformMatrix4(_modelLocation, false, ref model);
   }
-
 
   protected override void OnMouseWheel(MouseWheelEventArgs e)
   {
     base.OnMouseWheel(e);
 
     _zoom *= (e.OffsetY > 0) ? 1.1f : 0.9f;
-
     UpdateProjection();
   }
 
@@ -159,9 +170,10 @@ class MeshWindow : GameWindow
   {
     base.OnUnload();
 
-    GL.DeleteBuffer(_vbo);
-    GL.DeleteBuffer(_ebo);
-    GL.DeleteVertexArray(_vao);
+    foreach (var vbo in _vbos) GL.DeleteBuffer(vbo);
+    foreach (var ebo in _ebos) GL.DeleteBuffer(ebo);
+    foreach (var vao in _vaos) GL.DeleteVertexArray(vao);
+
     GL.DeleteProgram(_shaderProgram);
   }
 
@@ -181,4 +193,3 @@ class MeshWindow : GameWindow
     return shader;
   }
 }
-
