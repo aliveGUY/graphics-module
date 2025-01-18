@@ -32,21 +32,6 @@ class MeshWindow : GameWindow
     GL.ClearColor(0.1f, 0.1f, 0.1f, 1.0f);
     GL.Enable(EnableCap.DepthTest);
 
-    _vao = GL.GenVertexArray();
-    _vbo = GL.GenBuffer();
-    _ebo = GL.GenBuffer();
-
-    GL.BindVertexArray(_vao);
-
-    GL.BindBuffer(BufferTarget.ArrayBuffer, _vbo);
-    GL.BufferData(BufferTarget.ArrayBuffer, _mesh.Mesh.Vertices.Count * sizeof(float), _mesh.Mesh.Vertices.ToArray(), BufferUsageHint.StaticDraw);
-
-    GL.BindBuffer(BufferTarget.ElementArrayBuffer, _ebo);
-    GL.BufferData(BufferTarget.ElementArrayBuffer, _mesh.Mesh.Indices.Count * sizeof(int), _mesh.Mesh.Indices.ToArray(), BufferUsageHint.StaticDraw);
-
-    GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 3 * sizeof(float), 0);
-    GL.EnableVertexAttribArray(0);
-
     string vertexShaderSource = File.ReadAllText("src/static/shaders/vert.glsl");
     string fragmentShaderSource = File.ReadAllText("src/static/shaders/frag.glsl");
 
@@ -65,21 +50,35 @@ class MeshWindow : GameWindow
     _viewLocation = GL.GetUniformLocation(_shaderProgram, "view");
     _modelLocation = GL.GetUniformLocation(_shaderProgram, "model");
 
+    _vao = GL.GenVertexArray();
+    _vbo = GL.GenBuffer();
+    _ebo = GL.GenBuffer();
+
+    GL.BindVertexArray(_vao);
+
+    GL.BindBuffer(BufferTarget.ArrayBuffer, _vbo);
+    GL.BufferData(BufferTarget.ArrayBuffer, _mesh.Meshes[0].Vertices.Count * sizeof(float), _mesh.Meshes[0].Vertices.ToArray(), BufferUsageHint.StaticDraw);
+
+    GL.BindBuffer(BufferTarget.ElementArrayBuffer, _ebo);
+    GL.BufferData(BufferTarget.ElementArrayBuffer, _mesh.Meshes[0].Indices.Count * sizeof(int), _mesh.Meshes[0].Indices.ToArray(), BufferUsageHint.StaticDraw);
+
+    GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 3 * sizeof(float), 0);
+    GL.EnableVertexAttribArray(0);
+
     // Upload static animation data
     GL.UseProgram(_shaderProgram);
 
-    float[] keyframeTimes = _mesh.Mesh.KeyframeTimes;
-    GL.Uniform1(GL.GetUniformLocation(_shaderProgram, "keyframeTimes"), keyframeTimes.Length, keyframeTimes);
-    GL.Uniform3(GL.GetUniformLocation(_shaderProgram, "translations"), _mesh.Mesh.TranslationLength, _mesh.Mesh.TranslationBuffer);
-    GL.Uniform4(GL.GetUniformLocation(_shaderProgram, "rotations"), _mesh.Mesh.RotationLength, _mesh.Mesh.RotationBuffer);
-    GL.Uniform1(GL.GetUniformLocation(_shaderProgram, "keyframeCount"), keyframeTimes.Length);
+    GL.Uniform1(GL.GetUniformLocation(_shaderProgram, "keyframeTimes"), _mesh.Meshes[0].KeyframeTimes.Length, _mesh.Meshes[0].KeyframeTimes);
+    GL.Uniform3(GL.GetUniformLocation(_shaderProgram, "translations"), _mesh.Meshes[0].TranslationLength, _mesh.Meshes[0].TranslationBuffer);
+    GL.Uniform4(GL.GetUniformLocation(_shaderProgram, "rotations"), _mesh.Meshes[0].RotationLength, _mesh.Meshes[0].RotationBuffer);
+    GL.Uniform1(GL.GetUniformLocation(_shaderProgram, "keyframeCount"), _mesh.Meshes[0].KeyframeTimes.Length);
   }
 
   protected override void OnUpdateFrame(FrameEventArgs args)
   {
     base.OnUpdateFrame(args);
 
-    _deltaTime += (float)args.Time % _mesh.Mesh.Duration;
+    _deltaTime = (_deltaTime + (float)args.Time) % _mesh.Meshes[0].Duration;
 
     UpdateProjection();
   }
@@ -92,14 +91,11 @@ class MeshWindow : GameWindow
 
     GL.UseProgram(_shaderProgram);
 
-    int animationTimeLocation = GL.GetUniformLocation(_shaderProgram, "animationTime");
-    GL.Uniform1(animationTimeLocation, _deltaTime);
-
-    int animationDurationLocation = GL.GetUniformLocation(_shaderProgram, "animationDuration");
-    GL.Uniform1(animationDurationLocation, _mesh.Mesh.Duration);
+    GL.Uniform1(GL.GetUniformLocation(_shaderProgram, "animationTime"), _deltaTime);
+    GL.Uniform1(GL.GetUniformLocation(_shaderProgram, "animationDuration"), _mesh.Meshes[0].Duration);
 
     GL.BindVertexArray(_vao);
-    GL.DrawElements(PrimitiveType.Triangles, _mesh.Mesh.Indices.Count, DrawElementsType.UnsignedInt, 0);
+    GL.DrawElements(PrimitiveType.Triangles, _mesh.Meshes[0].Indices.Count, DrawElementsType.UnsignedInt, 0);
 
     SwapBuffers();
   }
@@ -115,7 +111,7 @@ class MeshWindow : GameWindow
     var view = Matrix4.LookAt(new Vector3(0.0f, 0.0f, cameraDistance), Vector3.Zero, Vector3.UnitY);
 
     // Use Object3D's model matrix
-    var model = _mesh.Mesh.ModelMatrix *
+    var model = _mesh.Meshes[0].ModelMatrix *
                 Matrix4.CreateRotationX(MathHelper.DegreesToRadians(_rotationX)) *
                 Matrix4.CreateRotationY(MathHelper.DegreesToRadians(_rotationY));
 

@@ -1,5 +1,8 @@
 using SharpGLTF.Schema2;
 using OpenTK.Mathematics;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 
 public struct MeshData
 {
@@ -15,21 +18,21 @@ public struct MeshData
 
   public MeshData()
   {
-    Vertices = [];
-    Indices = [];
+    Vertices = new List<float>();
+    Indices = new List<int>();
     Duration = 0f;
     ModelMatrix = Matrix4.Identity;
-    KeyframeTimes = [];
-    TranslationBuffer = [];
+    KeyframeTimes = Array.Empty<float>();
+    TranslationBuffer = Array.Empty<float>();
     TranslationLength = 0;
-    RotationBuffer = [];
+    RotationBuffer = Array.Empty<float>();
     RotationLength = 0;
   }
 }
 
 public class Object3D
 {
-  public MeshData Mesh = new();
+  public List<MeshData> Meshes { get; private set; } = new List<MeshData>();
 
   /// <summary>
   /// Loads a GLTF file and extracts the buffer data from the default scene.
@@ -40,28 +43,45 @@ public class Object3D
     Scene scene = model.DefaultScene;
     IReadOnlyList<Animation> animations = model.LogicalAnimations;
 
+    foreach (Node node in scene.VisualChildren)
+    {
+      TraverseNode(node);
+    }
     ExtractAnimationData(animations);
-    TraverseNode(scene.VisualChildren.First());
   }
 
   private void TraverseNode(Node node)
   {
+    if (node == null) return;
+
     if (node.Mesh != null)
+    {
       ExtractMeshData(node.Mesh);
+    }
 
     foreach (Node child in node.VisualChildren)
+    {
       TraverseNode(child);
+    }
   }
 
   private void ExtractMeshData(Mesh mesh)
   {
     foreach (MeshPrimitive primitive in mesh.Primitives)
     {
+      var meshData = new MeshData();
+
       if (primitive.VertexAccessors.TryGetValue("POSITION", out Accessor? positionAccessor))
-        Mesh.Vertices.AddRange(positionAccessor.AsVector3Array().SelectMany(v => new[] { v.X, v.Y, v.Z }));
+      {
+        meshData.Vertices.AddRange(positionAccessor.AsVector3Array().SelectMany(v => new[] { v.X, v.Y, v.Z }));
+      }
 
       if (primitive.IndexAccessor != null)
-        Mesh.Indices.AddRange(primitive.IndexAccessor.AsIndicesArray().Select(i => (int)i));
+      {
+        meshData.Indices.AddRange(primitive.IndexAccessor.AsIndicesArray().Select(i => (int)i));
+      }
+
+      Meshes.Add(meshData);
     }
   }
 
@@ -73,42 +93,48 @@ public class Object3D
         .SelectMany(animation => animation.Channels)
         .FirstOrDefault(ch => ch.GetTranslationSampler() != null || ch.GetRotationSampler() != null);
 
-    if (channel == null || channel.TargetNode == null) return;
+    if (channel?.TargetNode == null) return;
 
-    var translationSampler = channel.GetTranslationSampler();
-    if (translationSampler != null)
+    var translationKeyframes = channel.GetTranslationSampler()?.GetLinearKeys();
+    var rotationKeyframes = channel.GetRotationSampler()?.GetLinearKeys();
+
+    for (int i = 0; i < Meshes.Count; i++)
     {
-      var translationKeyframes = translationSampler.GetLinearKeys();
+      var mesh = Meshes[i];
 
-      if (Mesh.KeyframeTimes == null || Mesh.KeyframeTimes.Length == 0)
+      mesh.KeyframeTimes ??= Array.Empty<float>();
+
+      if (translationKeyframes?.Any() == true)
       {
-        Mesh.KeyframeTimes = translationKeyframes.Select(kf => kf.Key).ToArray();
+        if (mesh.KeyframeTimes.Length == 0)
+        {
+          mesh.KeyframeTimes = translationKeyframes.Select(kf => kf.Key).ToArray();
+        }
+
+        mesh.TranslationBuffer = translationKeyframes
+            .SelectMany(kf => new[] { kf.Value.X, kf.Value.Y, kf.Value.Z })
+            .ToArray();
+
+        mesh.TranslationLength = translationKeyframes.Count();
       }
 
-      Mesh.TranslationBuffer = translationKeyframes
-          .SelectMany(kf => new[] { kf.Value.X, kf.Value.Y, kf.Value.Z })
-          .ToArray();
-
-      Mesh.TranslationLength = translationKeyframes.Count();
-    }
-
-    var rotationSampler = channel.GetRotationSampler();
-    if (rotationSampler != null)
-    {
-      var rotationKeyframes = rotationSampler.GetLinearKeys();
-
-      if (Mesh.KeyframeTimes == null || Mesh.KeyframeTimes.Length == 0)
+      if (rotationKeyframes?.Any() == true)
       {
-        Mesh.KeyframeTimes = rotationKeyframes.Select(kf => kf.Key).ToArray();
+        if (mesh.KeyframeTimes.Length == 0)
+        {
+          mesh.KeyframeTimes = rotationKeyframes.Select(kf => kf.Key).ToArray();
+        }
+
+        mesh.RotationBuffer = rotationKeyframes
+            .SelectMany(kf => new[] { kf.Value.X, kf.Value.Y, kf.Value.Z, kf.Value.W })
+            .ToArray();
+
+        mesh.RotationLength = rotationKeyframes.Count();
       }
 
-      Mesh.RotationBuffer = rotationKeyframes
-          .SelectMany(kf => new[] { kf.Value.X, kf.Value.Y, kf.Value.Z, kf.Value.W })
-          .ToArray();
+      mesh.Duration = mesh.KeyframeTimes?.Max() ?? 0f;
 
-      Mesh.RotationLength = rotationKeyframes.Count();
+      Meshes[i] = mesh;
     }
-
-    Mesh.Duration = Mesh.KeyframeTimes?.Max() ?? 0f;
   }
 }
