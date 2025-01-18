@@ -1,6 +1,9 @@
 #version 330 core
 
 layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec2 aTexCoord;
+
+out vec2 TexCoord;
 
 uniform mat4 projection;
 uniform mat4 view;
@@ -38,16 +41,15 @@ vec3 cubicSpline(vec3 prevPoint, vec3 prevTangent, vec3 nextPoint, vec3 nextTang
     (t3 - t2) * nextTangent;
 }
 
-// Main function
 void main() {
   if(animationDuration <= 0.0 || keyframeCount < 2) {
     gl_Position = projection * view * model * vec4(aPos, 1.0);
+    TexCoord = aTexCoord;
     return;
   }
 
   float normalizedTime = mod(animationTime, animationDuration) / animationDuration;
 
-    // Find the surrounding keyframes
   int startIndex = 0;
   int endIndex = 0;
   for(int i = 0; i < keyframeCount - 1; ++i) {
@@ -64,20 +66,19 @@ void main() {
   vec3 interpolatedTranslation;
   vec4 interpolatedRotation;
 
-  if(interpolationMode == 0) { // STEP interpolation
+  if(interpolationMode == 0) {
     interpolatedTranslation = translations[startIndex];
     interpolatedRotation = rotations[startIndex];
-  } else if(interpolationMode == 1) { // LINEAR interpolation
+  } else if(interpolationMode == 1) {
     interpolatedTranslation = mix(translations[startIndex], translations[endIndex], t);
     interpolatedRotation = slerp(rotations[startIndex], rotations[endIndex], t);
-  } else if(interpolationMode == 2) { // CUBICSPLINE interpolation
+  } else if(interpolationMode == 2) {
     vec3 prevTangent = (keyframeTimes[endIndex] - keyframeTimes[startIndex]) * translations[startIndex];
     vec3 nextTangent = (keyframeTimes[endIndex] - keyframeTimes[startIndex]) * translations[endIndex];
     interpolatedTranslation = cubicSpline(translations[startIndex], prevTangent, translations[endIndex], nextTangent, t);
-    interpolatedRotation = slerp(rotations[startIndex], rotations[endIndex], t); // Cubic spline rotation requires additional tangent support
+    interpolatedRotation = slerp(rotations[startIndex], rotations[endIndex], t);
   }
 
-    // Construct transformation matrices
   mat4 translationMatrix = mat4(1.0);
   translationMatrix[3] = vec4(interpolatedTranslation, 1.0);
 
@@ -90,4 +91,5 @@ void main() {
   mat4 animationTransform = translationMatrix * rotationMatrix;
 
   gl_Position = projection * view * model * animationTransform * vec4(aPos, 1.0);
+  TexCoord = aTexCoord;
 }

@@ -3,6 +3,7 @@ using OpenTK.Mathematics;
 using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
 using System;
+using System.Collections.Generic;
 using System.IO;
 
 public class MeshWindow : GameWindow
@@ -11,6 +12,7 @@ public class MeshWindow : GameWindow
   private List<int> _vaos = new();
   private List<int> _vbos = new();
   private List<int> _ebos = new();
+  private List<int> _textureIds = new();
   private int _shaderProgram;
   private int _projectionLocation, _viewLocation, _modelLocation;
   private float _deltaTime = 0.0f;
@@ -71,11 +73,66 @@ public class MeshWindow : GameWindow
       GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 3 * sizeof(float), 0);
       GL.EnableVertexAttribArray(0);
 
+      if (meshData.TextureCoordinates.Count > 0)
+      {
+        int texVbo = GL.GenBuffer();
+        GL.BindBuffer(BufferTarget.ArrayBuffer, texVbo);
+        GL.BufferData(BufferTarget.ArrayBuffer, meshData.TextureCoordinates.Count * sizeof(float), meshData.TextureCoordinates.ToArray(), BufferUsageHint.StaticDraw);
+
+        GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, 2 * sizeof(float), 0);
+        GL.EnableVertexAttribArray(1);
+        _vbos.Add(texVbo);
+      }
+
       _vaos.Add(vao);
       _vbos.Add(vbo);
       _ebos.Add(ebo);
+
+      foreach (var texture in meshData.Textures)
+      {
+        int textureId = LoadTexture(texture.BinaryData);
+        _textureIds.Add(textureId);
+      }
     }
   }
+
+  private int LoadTexture(byte[] binaryData)
+  {
+    int textureId = GL.GenTexture();
+    GL.BindTexture(TextureTarget.Texture2D, textureId);
+
+    GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+    GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+    GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.Repeat);
+    GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.Repeat);
+
+    using var memoryStream = new MemoryStream(binaryData);
+    using var image = SixLabors.ImageSharp.Image.Load<SixLabors.ImageSharp.PixelFormats.Rgba32>(memoryStream);
+
+    // Convert image to an array of raw RGBA pixel data
+    var pixelData = new byte[image.Width * image.Height * 4];
+    image.ProcessPixelRows(accessor =>
+    {
+      for (int y = 0; y < image.Height; y++)
+      {
+        var row = accessor.GetRowSpan(y);
+        for (int x = 0; x < row.Length; x++)
+        {
+          var pixel = row[x];
+          int index = (y * image.Width + x) * 4;
+          pixelData[index] = pixel.R;
+          pixelData[index + 1] = pixel.G;
+          pixelData[index + 2] = pixel.B;
+          pixelData[index + 3] = pixel.A;
+        }
+      }
+    });
+
+    GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, image.Width, image.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, pixelData);
+
+    return textureId;
+  }
+
 
   protected override void OnUpdateFrame(FrameEventArgs args)
   {
@@ -113,6 +170,14 @@ public class MeshWindow : GameWindow
       GL.UniformMatrix4(_modelLocation, false, ref model);
 
       GL.BindVertexArray(_vaos[i]);
+
+      if (mesh.Textures.Count > 0)
+      {
+        GL.ActiveTexture(TextureUnit.Texture0);
+        GL.BindTexture(TextureTarget.Texture2D, _textureIds[i]);
+        GL.Uniform1(GL.GetUniformLocation(_shaderProgram, "textureSampler"), 0);
+      }
+
       GL.DrawElements(PrimitiveType.Triangles, mesh.Indices.Count, DrawElementsType.UnsignedInt, 0);
     }
 
@@ -173,6 +238,7 @@ public class MeshWindow : GameWindow
     foreach (var vbo in _vbos) GL.DeleteBuffer(vbo);
     foreach (var ebo in _ebos) GL.DeleteBuffer(ebo);
     foreach (var vao in _vaos) GL.DeleteVertexArray(vao);
+    foreach (var textureId in _textureIds) GL.DeleteTexture(textureId);
 
     GL.DeleteProgram(_shaderProgram);
   }

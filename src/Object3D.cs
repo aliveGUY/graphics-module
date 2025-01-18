@@ -1,13 +1,17 @@
 using SharpGLTF.Schema2;
 using OpenTK.Mathematics;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
 
 public struct MeshData
 {
-  // Mesh
+  // Mesh data
   public List<float> Vertices { get; set; }
   public List<int> Indices { get; set; }
+  public List<float> TextureCoordinates { get; set; }
   public Matrix4 ModelMatrix { get; set; }
-  // Animation
+
+  // Animation data
   public float Duration { get; set; }
   public float[] KeyframeTimes { get; set; }
   public float[] TranslationBuffer { get; set; }
@@ -15,17 +19,22 @@ public struct MeshData
   public float[] RotationBuffer { get; set; }
   public int RotationLength { get; set; }
 
+  // Texture info
+  public List<TextureInfo> Textures { get; set; }
+
   public MeshData()
   {
-    Vertices = [];
-    Indices = [];
+    Vertices = new List<float>();
+    Indices = new List<int>();
+    TextureCoordinates = new List<float>();
     Duration = 0f;
     ModelMatrix = Matrix4.Identity;
-    KeyframeTimes = [];
-    TranslationBuffer = [];
+    KeyframeTimes = Array.Empty<float>();
+    TranslationBuffer = Array.Empty<float>();
     TranslationLength = 0;
-    RotationBuffer = [];
+    RotationBuffer = Array.Empty<float>();
     RotationLength = 0;
+    Textures = new List<TextureInfo>();
   }
 }
 
@@ -33,19 +42,17 @@ public class Object3D
 {
   public List<MeshData> Meshes { get; private set; } = new List<MeshData>();
 
-  /// <summary>
-  /// Loads a GLTF file and extracts the buffer data from the default scene.
-  /// </summary>
   public void LoadFromGLTF(string filePath)
   {
-    ModelRoot model = ModelRoot.Load(filePath);
-    Scene scene = model.DefaultScene;
-    IReadOnlyList<Animation> animations = model.LogicalAnimations;
+    var model = ModelRoot.Load(filePath);
+    var scene = model.DefaultScene;
+    var animations = model.LogicalAnimations;
 
-    foreach (Node node in scene.VisualChildren)
+    foreach (var node in scene.VisualChildren)
     {
       TraverseNode(node);
     }
+
     ExtractAnimationData(animations);
   }
 
@@ -58,7 +65,7 @@ public class Object3D
       ExtractMeshData(node);
     }
 
-    foreach (Node child in node.VisualChildren)
+    foreach (var child in node.VisualChildren)
     {
       TraverseNode(child);
     }
@@ -66,21 +73,49 @@ public class Object3D
 
   private void ExtractMeshData(Node node)
   {
-    foreach (MeshPrimitive primitive in node.Mesh.Primitives)
+    foreach (var primitive in node.Mesh.Primitives)
     {
       var meshData = new MeshData();
 
-      if (primitive.VertexAccessors.TryGetValue("POSITION", out Accessor? positionAccessor))
+      // Extract vertex positions
+      var positionAccessor = primitive.GetVertexAccessor("POSITION");
+      if (positionAccessor != null)
       {
         meshData.Vertices.AddRange(positionAccessor.AsVector3Array().SelectMany(v => new[] { v.X, v.Y, v.Z }));
       }
 
-      if (primitive.IndexAccessor != null)
+      // Extract texture coordinates
+      var texCoordAccessor = primitive.GetVertexAccessor("TEXCOORD_0");
+      if (texCoordAccessor != null)
       {
-        meshData.Indices.AddRange(primitive.IndexAccessor.AsIndicesArray().Select(i => (int)i));
+        meshData.TextureCoordinates.AddRange(texCoordAccessor.AsVector2Array().SelectMany(v => new[] { v.X, v.Y }));
       }
 
-      meshData.ModelMatrix = ConvertToMatrix4(node.LocalMatrix); ;
+      // Extract indices
+      var indexAccessor = primitive.IndexAccessor;
+      if (indexAccessor != null)
+      {
+        meshData.Indices.AddRange(indexAccessor.AsIndicesArray().Select(i => (int)i));
+      }
+
+      // Assign model matrix
+      meshData.ModelMatrix = ConvertToMatrix4(node.LocalMatrix);
+
+      // Extract textures
+      foreach (var channel in primitive.Material?.Channels ?? Enumerable.Empty<MaterialChannel>())
+      {
+        var textureInfo = channel.Texture;
+        if (textureInfo != null)
+        {
+          var binaryData = LoadTextureData(textureInfo.PrimaryImage);
+          meshData.Textures.Add(new TextureInfo
+          {
+            TextureCoordinate = channel.TextureCoordinate,
+            ImageIndex = textureInfo.PrimaryImage.LogicalIndex,
+            BinaryData = binaryData
+          });
+        }
+      }
 
       Meshes.Add(meshData);
     }
@@ -89,10 +124,10 @@ public class Object3D
   private Matrix4 ConvertToMatrix4(System.Numerics.Matrix4x4 matrix)
   {
     return new Matrix4(
-      matrix.M11, matrix.M12, matrix.M13, matrix.M14,
-      matrix.M21, matrix.M22, matrix.M23, matrix.M24,
-      matrix.M31, matrix.M32, matrix.M33, matrix.M34,
-      matrix.M41, matrix.M42, matrix.M43, matrix.M44
+        matrix.M11, matrix.M12, matrix.M13, matrix.M14,
+        matrix.M21, matrix.M22, matrix.M23, matrix.M24,
+        matrix.M31, matrix.M32, matrix.M33, matrix.M34,
+        matrix.M41, matrix.M42, matrix.M43, matrix.M44
     );
   }
 
@@ -150,4 +185,22 @@ public class Object3D
     }
   }
 
+  private byte[] LoadTextureData(SharpGLTF.Schema2.Image gltfImage)
+  {
+    // Open the image content stream provided by SharpGLTF
+    using var contentStream = gltfImage.Content.Open();
+    using var image = SixLabors.ImageSharp.Image.Load<Rgba32>(contentStream);
+
+    using var outputStream = new MemoryStream();
+    image.SaveAsPng(outputStream);
+    return outputStream.ToArray();
+  }
+
+}
+
+public class TextureInfo
+{
+  public int TextureCoordinate { get; set; }
+  public int ImageIndex { get; set; }
+  public byte[] BinaryData { get; set; }
 }

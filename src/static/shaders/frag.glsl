@@ -1,6 +1,11 @@
 #version 330 core
+
+in vec2 TexCoord; // Texture coordinates from vertex shader
 out vec4 FragColor;
 
+uniform sampler2D textureSampler;
+
 void main() {
-  FragColor = vec4(.75, 0.75, 0.75, 1.0);
+    // Sample the texture and output the color
+    FragColor = texture(textureSampler, TexCoord);
 }
