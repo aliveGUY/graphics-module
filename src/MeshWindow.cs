@@ -39,10 +39,10 @@ class MeshWindow : GameWindow
     GL.BindVertexArray(_vao);
 
     GL.BindBuffer(BufferTarget.ArrayBuffer, _vbo);
-    GL.BufferData(BufferTarget.ArrayBuffer, _mesh.Vertices.Count * sizeof(float), _mesh.Vertices.ToArray(), BufferUsageHint.StaticDraw);
+    GL.BufferData(BufferTarget.ArrayBuffer, _mesh.Mesh.Vertices.Count * sizeof(float), _mesh.Mesh.Vertices.ToArray(), BufferUsageHint.StaticDraw);
 
     GL.BindBuffer(BufferTarget.ElementArrayBuffer, _ebo);
-    GL.BufferData(BufferTarget.ElementArrayBuffer, _mesh.Indices.Count * sizeof(int), _mesh.Indices.ToArray(), BufferUsageHint.StaticDraw);
+    GL.BufferData(BufferTarget.ElementArrayBuffer, _mesh.Mesh.Indices.Count * sizeof(int), _mesh.Mesh.Indices.ToArray(), BufferUsageHint.StaticDraw);
 
     GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 3 * sizeof(float), 0);
     GL.EnableVertexAttribArray(0);
@@ -68,30 +68,10 @@ class MeshWindow : GameWindow
     // Upload static animation data
     GL.UseProgram(_shaderProgram);
 
-    float[] keyframeTimes = _mesh.KeyframeTimes;
+    float[] keyframeTimes = _mesh.Mesh.KeyframeTimes;
     GL.Uniform1(GL.GetUniformLocation(_shaderProgram, "keyframeTimes"), keyframeTimes.Length, keyframeTimes);
-
-    Vector3[] translations = _mesh.Translations;
-    float[] translationBuffer = new float[translations.Length * 3];
-    for (int i = 0; i < translations.Length; i++)
-    {
-      translationBuffer[i * 3] = translations[i].X;
-      translationBuffer[i * 3 + 1] = translations[i].Y;
-      translationBuffer[i * 3 + 2] = translations[i].Z;
-    }
-    GL.Uniform3(GL.GetUniformLocation(_shaderProgram, "translations"), translations.Length, translationBuffer);
-
-    Quaternion[] rotations = _mesh.Rotations;
-    float[] rotationBuffer = new float[rotations.Length * 4];
-    for (int i = 0; i < rotations.Length; i++)
-    {
-      rotationBuffer[i * 4] = rotations[i].X;
-      rotationBuffer[i * 4 + 1] = rotations[i].Y;
-      rotationBuffer[i * 4 + 2] = rotations[i].Z;
-      rotationBuffer[i * 4 + 3] = rotations[i].W;
-    }
-    GL.Uniform4(GL.GetUniformLocation(_shaderProgram, "rotations"), rotations.Length, rotationBuffer);
-
+    GL.Uniform3(GL.GetUniformLocation(_shaderProgram, "translations"), _mesh.Mesh.TranslationLength, _mesh.Mesh.TranslationBuffer);
+    GL.Uniform4(GL.GetUniformLocation(_shaderProgram, "rotations"), _mesh.Mesh.RotationLength, _mesh.Mesh.RotationBuffer);
     GL.Uniform1(GL.GetUniformLocation(_shaderProgram, "keyframeCount"), keyframeTimes.Length);
   }
 
@@ -99,7 +79,7 @@ class MeshWindow : GameWindow
   {
     base.OnUpdateFrame(args);
 
-    _deltaTime += (float)args.Time % _mesh.Duration;
+    _deltaTime += (float)args.Time % _mesh.Mesh.Duration;
 
     UpdateProjection();
   }
@@ -116,10 +96,10 @@ class MeshWindow : GameWindow
     GL.Uniform1(animationTimeLocation, _deltaTime);
 
     int animationDurationLocation = GL.GetUniformLocation(_shaderProgram, "animationDuration");
-    GL.Uniform1(animationDurationLocation, _mesh.Duration);
+    GL.Uniform1(animationDurationLocation, _mesh.Mesh.Duration);
 
     GL.BindVertexArray(_vao);
-    GL.DrawElements(PrimitiveType.Triangles, _mesh.Indices.Count, DrawElementsType.UnsignedInt, 0);
+    GL.DrawElements(PrimitiveType.Triangles, _mesh.Mesh.Indices.Count, DrawElementsType.UnsignedInt, 0);
 
     SwapBuffers();
   }
@@ -135,7 +115,7 @@ class MeshWindow : GameWindow
     var view = Matrix4.LookAt(new Vector3(0.0f, 0.0f, cameraDistance), Vector3.Zero, Vector3.UnitY);
 
     // Use Object3D's model matrix
-    var model = _mesh.ModelMatrix *
+    var model = _mesh.Mesh.ModelMatrix *
                 Matrix4.CreateRotationX(MathHelper.DegreesToRadians(_rotationX)) *
                 Matrix4.CreateRotationY(MathHelper.DegreesToRadians(_rotationY));
 
