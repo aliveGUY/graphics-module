@@ -102,19 +102,17 @@ public class Object3D
       meshData.ModelMatrix = ConvertToMatrix4(node.LocalMatrix);
 
       // Extract textures
-      foreach (var channel in primitive.Material?.Channels ?? Enumerable.Empty<MaterialChannel>())
+      var baseColorTextureInfo = primitive.Material?.FindChannel("BaseColor")?.Texture;
+      if (baseColorTextureInfo != null)
       {
-        var textureInfo = channel.Texture;
-        if (textureInfo != null)
+        var binaryData = LoadTextureData(baseColorTextureInfo.PrimaryImage);
+
+        meshData.Textures.Add(new TextureInfo
         {
-          var binaryData = LoadTextureData(textureInfo.PrimaryImage);
-          meshData.Textures.Add(new TextureInfo
-          {
-            TextureCoordinate = channel.TextureCoordinate,
-            ImageIndex = textureInfo.PrimaryImage.LogicalIndex,
-            BinaryData = binaryData
-          });
-        }
+          TextureCoordinate = 0,
+          ImageIndex = baseColorTextureInfo.PrimaryImage.LogicalIndex,
+          BinaryData = binaryData
+        });
       }
 
       Meshes.Add(meshData);
@@ -202,5 +200,5 @@ public class TextureInfo
 {
   public int TextureCoordinate { get; set; }
   public int ImageIndex { get; set; }
-  public byte[] BinaryData { get; set; }
+  public required byte[] BinaryData { get; set; }
 }
