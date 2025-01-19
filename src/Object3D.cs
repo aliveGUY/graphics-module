@@ -8,7 +8,6 @@ public struct MeshData
   // Mesh data
   public List<float> Vertices { get; set; }
   public List<int> Indices { get; set; }
-  public List<float> TextureCoordinates { get; set; }
   public Matrix4 ModelMatrix { get; set; }
 
   // Animation data
@@ -21,6 +20,7 @@ public struct MeshData
 
   // Texture info
   public List<TextureInfo> Textures { get; set; }
+  public List<float> TextureCoordinates { get; set; }
 
   public MeshData()
   {
@@ -84,13 +84,6 @@ public class Object3D
         meshData.Vertices.AddRange(positionAccessor.AsVector3Array().SelectMany(v => new[] { v.X, v.Y, v.Z }));
       }
 
-      // Extract texture coordinates
-      var texCoordAccessor = primitive.GetVertexAccessor("TEXCOORD_0");
-      if (texCoordAccessor != null)
-      {
-        meshData.TextureCoordinates.AddRange(texCoordAccessor.AsVector2Array().SelectMany(v => new[] { v.X, v.Y }));
-      }
-
       // Extract indices
       var indexAccessor = primitive.IndexAccessor;
       if (indexAccessor != null)
@@ -103,6 +96,10 @@ public class Object3D
 
       // Extract textures
       var baseColorTextureInfo = primitive.Material?.FindChannel("BaseColor")?.Texture;
+      var texCoordAccessor = primitive.GetVertexAccessor("TEXCOORD_0");
+      if (texCoordAccessor != null)
+        meshData.TextureCoordinates.AddRange(texCoordAccessor.AsVector2Array().SelectMany(v => new[] { v.X, v.Y }));
+
       if (baseColorTextureInfo != null)
       {
         var binaryData = LoadTextureData(baseColorTextureInfo.PrimaryImage);
