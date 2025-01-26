@@ -69,32 +69,50 @@ public class MeshWindow : GameWindow
 
       GL.BindVertexArray(vao);
 
-      // Upload base vertices
       GL.BindBuffer(BufferTarget.ArrayBuffer, vbo);
       GL.BufferData(BufferTarget.ArrayBuffer, meshData.Vertices.Count * sizeof(float), meshData.Vertices.ToArray(), BufferUsageHint.StaticDraw);
+
+      GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo);
+      GL.BufferData(BufferTarget.ElementArrayBuffer, meshData.Indices.Count * sizeof(int), meshData.Indices.ToArray(), BufferUsageHint.StaticDraw);
+
       GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 3 * sizeof(float), 0);
       GL.EnableVertexAttribArray(0);
 
-      // Upload morph targets
-      for (int i = 0; i < meshData.MorphTargets.Length; i++)
+      if (meshData.TextureCoordinates.Count > 0)
       {
-        int morphVbo = GL.GenBuffer();
-        GL.BindBuffer(BufferTarget.ArrayBuffer, morphVbo);
-        GL.BufferData(BufferTarget.ArrayBuffer, meshData.MorphTargets[i].Length * sizeof(float), meshData.MorphTargets[i], BufferUsageHint.StaticDraw);
-        GL.VertexAttribPointer(2 + i, 3, VertexAttribPointerType.Float, false, 3 * sizeof(float), 0);
-        GL.EnableVertexAttribArray(2 + i);
-        _vbos.Add(morphVbo);
+        int texVbo = GL.GenBuffer();
+        GL.BindBuffer(BufferTarget.ArrayBuffer, texVbo);
+        GL.BufferData(BufferTarget.ArrayBuffer, meshData.TextureCoordinates.Count * sizeof(float), meshData.TextureCoordinates.ToArray(), BufferUsageHint.StaticDraw);
+
+        GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, 2 * sizeof(float), 0);
+        GL.EnableVertexAttribArray(1);
+        _vbos.Add(texVbo);
       }
 
-      // Upload indices
-      GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo);
-      GL.BufferData(BufferTarget.ElementArrayBuffer, meshData.Indices.Count * sizeof(int), meshData.Indices.ToArray(), BufferUsageHint.StaticDraw);
+      if (meshData.MorphTargets != null)
+      {
+        for (int i = 0; i < meshData.MorphTargets.Length; i++)
+        {
+          int morphBuffer = GL.GenBuffer();
+          GL.BindBuffer(BufferTarget.ArrayBuffer, morphBuffer);
+          GL.BufferData(BufferTarget.ArrayBuffer, meshData.MorphTargets[i].Length * sizeof(float), meshData.MorphTargets[i], BufferUsageHint.StaticDraw);
+          GL.VertexAttribPointer(2 + i, 3, VertexAttribPointerType.Float, false, 3 * sizeof(float), 0);
+          GL.EnableVertexAttribArray(2 + i);
+
+          _vbos.Add(morphBuffer);
+        }
+      }
 
       _vaos.Add(vao);
       _vbos.Add(vbo);
       _ebos.Add(ebo);
-    }
 
+      foreach (TextureInfo texture in meshData.Textures)
+      {
+        int textureId = LoadTexture(texture.BinaryData);
+        _textureIds.Add(textureId);
+      }
+    }
   }
 
   private int LoadTexture(byte[] binaryData)
