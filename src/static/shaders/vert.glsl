@@ -1,7 +1,8 @@
-#version 330 core
+#version 430 core
 
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec2 aTexCoord;
+layout(location = 2) in vec3 aMorphTargets[2];
 
 out vec2 TexCoord;
 
@@ -17,6 +18,7 @@ uniform vec3 translations[100];
 uniform vec4 rotations[100];
 uniform vec3 scales[100]; // Optional if scale animation is supported
 uniform int interpolationMode = 1; // 0 = STEP, 1 = LINEAR, 2 = CUBICSPLINE
+uniform float morphWeights[2];
 
 // Helper: Spherical Linear Interpolation (SLERP) for quaternions
 vec4 slerp(vec4 q1, vec4 q2, float t) {
@@ -41,13 +43,7 @@ vec3 cubicSpline(vec3 prevPoint, vec3 prevTangent, vec3 nextPoint, vec3 nextTang
     (t3 - t2) * nextTangent;
 }
 
-void main() {
-  if(animationDuration <= 0.0 || keyframeCount < 2) {
-    gl_Position = projection * view * model * vec4(aPos, 1.0);
-    TexCoord = aTexCoord;
-    return;
-  }
-
+mat4 staticObjectAnimation() {
   float normalizedTime = mod(animationTime, animationDuration) / animationDuration;
 
   int startIndex = 0;
@@ -90,6 +86,24 @@ void main() {
 
   mat4 animationTransform = translationMatrix * rotationMatrix;
 
-  gl_Position = projection * view * model * animationTransform * vec4(aPos, 1.0);
+  return animationTransform;
+}
+
+void main() {
+  vec3 morphedPosition = aPos;
+  for(int i = 0; i < 2; i++) {
+    morphedPosition += morphWeights[i] * aMorphTargets[i];
+  }
+  if(animationDuration <= 0.0 || keyframeCount < 2) {
+    gl_Position = projection * view * model * vec4(aPos, 1.0);
+    TexCoord = aTexCoord;
+    return;
+  }
+
+  mat4 animationTransform = staticObjectAnimation();
+
+  // gl_Position = projection * view * model * animationTransform * vec4(aPos, 1.0);
+
+  gl_Position = projection * view * model * vec4(morphedPosition, 1.0);
   TexCoord = aTexCoord;
 }

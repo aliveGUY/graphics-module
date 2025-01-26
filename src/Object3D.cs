@@ -5,7 +5,6 @@ using SixLabors.ImageSharp.PixelFormats;
 
 public struct MeshData
 {
-  // Mesh data
   public List<float> Vertices { get; set; }
   public List<int> Indices { get; set; }
   public Matrix4 ModelMatrix { get; set; }
@@ -13,6 +12,7 @@ public struct MeshData
   // Animation data
   public float Duration { get; set; }
   public float[] KeyframeTimes { get; set; }
+  public float[,] KeyframeWeights { get; set; }
   public float[] TranslationBuffer { get; set; }
   public int TranslationLength { get; set; }
   public float[] RotationBuffer { get; set; }
@@ -22,11 +22,15 @@ public struct MeshData
   public List<TextureInfo> Textures { get; set; }
   public List<float> TextureCoordinates { get; set; }
 
+  // Morph targets
+  public float[][] MorphTargets { get; set; }
+  
+
   public MeshData()
   {
-    Vertices = new List<float>();
-    Indices = new List<int>();
-    TextureCoordinates = new List<float>();
+    Vertices = [];
+    Indices = [];
+    TextureCoordinates = [];
     Duration = 0f;
     ModelMatrix = Matrix4.Identity;
     KeyframeTimes = Array.Empty<float>();
@@ -34,13 +38,15 @@ public struct MeshData
     TranslationLength = 0;
     RotationBuffer = Array.Empty<float>();
     RotationLength = 0;
-    Textures = new List<TextureInfo>();
+    Textures = [];
+    MorphTargets = Array.Empty<float[]>();
+    KeyframeWeights = new float[0, 0];
   }
 }
 
 public class Object3D
 {
-  public List<MeshData> Meshes { get; private set; } = new List<MeshData>();
+  public List<MeshData> Meshes { get; private set; } = [];
 
   public void LoadFromGLTF(string filePath)
   {
@@ -94,11 +100,25 @@ public class Object3D
       // Assign model matrix
       meshData.ModelMatrix = ConvertToMatrix4(node.LocalMatrix);
 
+      // Extract morph targets
+      var morphTargets = new List<float[]>();
+      for (int i = 0; i < primitive.MorphTargetsCount; i++)
+      {
+        var targetAccessors = primitive.GetMorphTargetAccessors(i);
+        if (targetAccessors.TryGetValue("POSITION", out var accessor))
+        {
+          morphTargets.Add(accessor.AsVector3Array().SelectMany(v => new[] { v.X, v.Y, v.Z }).ToArray());
+        }
+      }
+      meshData.MorphTargets = morphTargets.ToArray();
+
       // Extract textures
       var baseColorTextureInfo = primitive.Material?.FindChannel("BaseColor")?.Texture;
       var texCoordAccessor = primitive.GetVertexAccessor("TEXCOORD_0");
       if (texCoordAccessor != null)
+      {
         meshData.TextureCoordinates.AddRange(texCoordAccessor.AsVector2Array().SelectMany(v => new[] { v.X, v.Y }));
+      }
 
       if (baseColorTextureInfo != null)
       {
@@ -130,59 +150,111 @@ public class Object3D
   {
     if (animations == null || animations.Count == 0) return;
 
-    foreach (var animation in animations)
+    foreach (Animation animation in animations)
     {
-      foreach (var channel in animation.Channels)
+      foreach (AnimationChannel channel in animation.Channels)
       {
-        var targetNode = channel.TargetNode;
-        if (targetNode == null || targetNode.Mesh == null) continue;
-
-        int meshIndex = Meshes.FindIndex(m => m.ModelMatrix == ConvertToMatrix4(targetNode.WorldMatrix));
-        if (meshIndex == -1) continue;
-
-        var mesh = Meshes[meshIndex];
-
-        var translationKeyframes = channel.GetTranslationSampler()?.GetLinearKeys();
-        var rotationKeyframes = channel.GetRotationSampler()?.GetLinearKeys();
-
-        if (translationKeyframes?.Any() == true)
+        if (channel.TargetNodePath != PropertyPath.weights)
         {
-          if (mesh.KeyframeTimes.Length == 0)
+          var targetNode = channel.TargetNode;
+          if (targetNode == null || targetNode.Mesh == null) continue;
+
+          int meshIndex = Meshes.FindIndex(m => m.ModelMatrix == ConvertToMatrix4(targetNode.WorldMatrix));
+          if (meshIndex == -1) continue;
+
+          var mesh = Meshes[meshIndex];
+
+          var translationKeyframes = channel.GetTranslationSampler()?.GetLinearKeys();
+          var rotationKeyframes = channel.GetRotationSampler()?.GetLinearKeys();
+
+          if (translationKeyframes?.Any() == true)
           {
-            mesh.KeyframeTimes = translationKeyframes.Select(kf => kf.Key).ToArray();
+            if (mesh.KeyframeTimes.Length == 0)
+            {
+              mesh.KeyframeTimes = translationKeyframes.Select(kf => kf.Key).ToArray();
+            }
+
+            mesh.TranslationBuffer = translationKeyframes
+                .SelectMany(kf => new[] { kf.Value.X, kf.Value.Y, kf.Value.Z })
+                .ToArray();
+
+            mesh.TranslationLength = translationKeyframes.Count();
           }
 
-          mesh.TranslationBuffer = translationKeyframes
-              .SelectMany(kf => new[] { kf.Value.X, kf.Value.Y, kf.Value.Z })
-              .ToArray();
-
-          mesh.TranslationLength = translationKeyframes.Count();
-        }
-
-        if (rotationKeyframes?.Any() == true)
-        {
-          if (mesh.KeyframeTimes.Length == 0)
+          if (rotationKeyframes?.Any() == true)
           {
-            mesh.KeyframeTimes = rotationKeyframes.Select(kf => kf.Key).ToArray();
+            if (mesh.KeyframeTimes.Length == 0)
+            {
+              mesh.KeyframeTimes = rotationKeyframes.Select(kf => kf.Key).ToArray();
+            }
+
+            mesh.RotationBuffer = rotationKeyframes
+                .SelectMany(kf => new[] { kf.Value.X, kf.Value.Y, kf.Value.Z, kf.Value.W })
+                .ToArray();
+
+            mesh.RotationLength = rotationKeyframes.Count();
           }
 
-          mesh.RotationBuffer = rotationKeyframes
-              .SelectMany(kf => new[] { kf.Value.X, kf.Value.Y, kf.Value.Z, kf.Value.W })
-              .ToArray();
+          mesh.Duration = mesh.KeyframeTimes?.Max() ?? 0f;
 
-          mesh.RotationLength = rotationKeyframes.Count();
+          Meshes[meshIndex] = mesh;
         }
+        if (channel.TargetNodePath == PropertyPath.weights)
+        {
+          Node targetNode = channel.TargetNode;
+          if (targetNode == null || targetNode.Mesh == null) continue;
 
-        mesh.Duration = mesh.KeyframeTimes?.Max() ?? 0f;
+          int meshIndex = Meshes.FindIndex(m => m.ModelMatrix == ConvertToMatrix4(targetNode.WorldMatrix));
+          if (meshIndex == -1) continue;
 
-        Meshes[meshIndex] = mesh;
+          MeshData mesh = Meshes[meshIndex];
+
+          // Retrieve the morph sampler
+          IAnimationSampler<float[]> morphSampler = channel.GetMorphSampler();
+          if (morphSampler == null) continue;
+
+          // Only handle linear or step interpolation
+          if (morphSampler.InterpolationMode != AnimationInterpolationMode.LINEAR &&
+              morphSampler.InterpolationMode != AnimationInterpolationMode.STEP) continue;
+
+          // Extract linear keys (time-value pairs)
+          IEnumerable<(float Key, float[] Value)> linearKeys = morphSampler.GetLinearKeys();
+          if (linearKeys == null) continue;
+
+          List<float> keyframeTimes = [];
+          List<float[]> keyframeWeights = [];
+
+          foreach ((float time, float[] weights) in linearKeys)
+          {
+            keyframeTimes.Add(time);
+            keyframeWeights.Add(weights);
+          }
+
+          // Convert keyframe weights to a 2D array
+          int frameCount = keyframeTimes.Count;
+          int morphTargetCount = keyframeWeights[0].Length;
+
+          float[,] keyframeWeightsArray = new float[frameCount, morphTargetCount];
+          for (int i = 0; i < frameCount; i++)
+          {
+            for (int j = 0; j < morphTargetCount; j++)
+            {
+              keyframeWeightsArray[i, j] = keyframeWeights[i][j];
+            }
+          }
+
+          mesh.KeyframeTimes = keyframeTimes.ToArray();
+          mesh.KeyframeWeights = keyframeWeightsArray;
+          mesh.Duration = keyframeTimes.Max();
+
+          Meshes[meshIndex] = mesh;
+        }
       }
     }
   }
 
   private byte[] LoadTextureData(SharpGLTF.Schema2.Image gltfImage)
   {
-    // Open the image content stream provided by SharpGLTF
     using var contentStream = gltfImage.Content.Open();
     using var image = SixLabors.ImageSharp.Image.Load<Rgba32>(contentStream);
 
@@ -190,7 +262,6 @@ public class Object3D
     image.SaveAsPng(outputStream);
     return outputStream.ToArray();
   }
-
 }
 
 public class TextureInfo
